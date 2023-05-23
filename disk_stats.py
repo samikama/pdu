@@ -6,6 +6,7 @@ import os
 from typing import List, Dict, TypeVar
 from dataclasses import dataclass, field
 import logging
+import pwd, grp
 
 logging.basicConfig(
     format=
@@ -109,8 +110,10 @@ def stats(filename, top_n, top_d, max_dir_depth):
                                                   count="Number of files")
   ]
   for p, c in counts.items():
-    most_files.append("{uid:>15d} {gid:>15d} {count:>30s}".format(
-        uid=p[0], gid=p[1], count=humanize.intcomma(c)))
+    most_files.append("{uid:>15s} {gid:>15s} {count:>30s}".format(
+        uid=pwd.getpwuid(p[0]).pw_name,
+        gid=grp.getgrgid(p[1]).gr_name,
+        count=humanize.intcomma(c)))
   print("\n".join(most_files))
 
   most_volume = [
@@ -125,9 +128,9 @@ def stats(filename, top_n, top_d, max_dir_depth):
     top_dirs = [
         x for x in sorted_dirs[:min(len(sorted_dirs), top_d)] if x[1] != 0
     ]
-    most_volume.append("{uid:>15d} {gid:>15d} {count:>30s}: {dirs}".format(
-        uid=p[0],
-        gid=p[1],
+    most_volume.append("{uid:>15s} {gid:>15s} {count:>30s}: {dirs}".format(
+        uid=pwd.getpwuid(p[0]).pw_name,
+        gid=grp.getgrgid(p[1]).gr_name,
         count=humanize.naturalsize(c, binary=True),
         dirs=", ".join([
             "{dir}={size}".format(dir=x[0],
@@ -145,8 +148,10 @@ def stats(filename, top_n, top_d, max_dir_depth):
   ]
 
   for p, c in total_size.items():
-    most_actual.append("{uid:>15d} {gid:>15d} {count:>30s}".format(
-        uid=p[0], gid=p[1], count=humanize.naturalsize(c, binary=True)))
+    most_actual.append("{uid:>15s} {gid:>15s} {count:>30s}".format(
+        uid=pwd.getpwuid(p[0]).pw_name,
+        gid=grp.getgrgid(p[1]).gr_name,
+        count=humanize.naturalsize(c, binary=True)))
 
   print("\n".join(most_actual))
 
@@ -163,6 +168,7 @@ def parse_arguments():
 
 def main():
   args, unk = parse_arguments()
+  logger.info(args)
   stats(args.filename, args.top_n, args.dirs_per_user, args.max_dir_depth)
 
 
