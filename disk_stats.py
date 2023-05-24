@@ -1,12 +1,16 @@
 from __future__ import annotations
 import gzip, pandas
+#import dask
+#import dask.dataframe as dsk
 from argparse import ArgumentParser as AP
 import humanize
 import os
 from typing import List, Dict, TypeVar
 from dataclasses import dataclass, field
 import logging
+import multiprocessing
 import pwd, grp
+from multiprocessing import Pool
 
 logging.basicConfig(
     format=
@@ -37,6 +41,18 @@ class TDirectory:
   parent: TDirectorySelf = None
   files: List[TFile] = field(default_factory=list)
   dirs: dict[str, TDirectorySelf] = field(default_factory=dict)
+
+  def __or__(self, other: TDirectory):
+    assert type(self) == type(other)
+    assert self.name == other.name
+    assert self.parent == other.parent
+    self.files.extend(other.files)
+    self.size += other.size
+    self.blocks += other.blocks
+    self.self_size += other.self_size
+    for n, d in other.dirs.items():
+      m = self.dirs.setdefault(n, TDirectory(name=n))
+      m | d
 
 
 def process_files(df, relative='/'):
@@ -73,7 +89,7 @@ def process_files(df, relative='/'):
       par.size += size
       par.blocks += blocks
       par = par.parent
-  logging.info("Processed {ctr} files".format(ctr=counter))
+  logging.info("Processed {ctr} files".format(ctr=humanize.intcomma(counter)))
   return root
 
 
@@ -96,13 +112,28 @@ def max_dirs(root, depth=2):
   return sorted_dirs
 
 
-def stats(filename, top_n, top_d, max_dir_depth):
-  with gzip.open(filename, mode='rt', newline="") as input:
-    df = pandas.read_csv(input, engine='pyarrow')
+def get_topdirs(id, df, max_dir_depth, top_d):
+  logger.info("Processing user {uid} pid={pid} name={name}".format(
+      uid=id, pid=os.getpid(), name=multiprocessing.current_process().name))
+  tree = process_files(df[df['uid'] == id].sort_values(by=['filename']))
+  sorted_dirs = max_dirs(tree, max_dir_depth)
+  top_dirs = [
+      x for x in sorted_dirs[:min(len(sorted_dirs), top_d)] if x[1] != 0
+  ]
+  return id, top_dirs
+
+
+def stats(filename, top_n, top_d, max_dir_depth, n_proc):
+  # with gzip.open(filename, mode='rt', newline="") as input:
+  #   df = pandas.read_csv(input)
+  df = pandas.read_csv(filename)
+  logging.info("Parsing csv {f} completed".format(f=filename))
   df2 = df.groupby(['uid', 'gid'], sort=False)
   counts = df2['filename'].count().nlargest(top_n)
   sizes = df2['file_size'].sum().nlargest(top_n)
   total_size = df2['num_blocks'].sum().mul(512).nlargest(top_n)
+  #counts, sizes, total_size = dask.compute(counts, sizes, total_size)
+  logger.info("Top_n computation is done")
   most_files = [
       "----------Users with most files------------",
       "{uid:>15s} {gid:>15s} {count:>30s}".format(uid="uid",
@@ -110,10 +141,15 @@ def stats(filename, top_n, top_d, max_dir_depth):
                                                   count="Number of files")
   ]
   for p, c in counts.items():
-    most_files.append("{uid:>15s} {gid:>15s} {count:>30s}".format(
-        uid=pwd.getpwuid(p[0]).pw_name,
-        gid=grp.getgrgid(p[1]).gr_name,
-        count=humanize.intcomma(c)))
+    uid = p[0]
+    gid = p[1]
+    try:
+      uid = pwd.getpwuid(p[0]).pw_name
+      gid = grp.getgrgid(p[1]).gr_name
+    except:
+      pass
+    most_files.append("{uid:>15} {gid:>15} {count:>30s}".format(
+        uid=uid, gid=gid, count=humanize.intcomma(c)))
   print("\n".join(most_files))
 
   most_volume = [
@@ -122,15 +158,29 @@ def stats(filename, top_n, top_d, max_dir_depth):
           uid="uid", gid="gid", count="Total File Size", dirs="Top dirs")
   ]
 
+  with Pool(n_proc) as pool:
+    uids = [p[0] for p, _ in sizes.items()]
+    nusers = len(uids)
+    logger.info(
+        "Starting per directory disk utilization calculation using {proc} processes for {nusers} users"
+        .format(proc=n_proc, nusers=nusers))
+    args = zip(uids, [df] * nusers, [max_dir_depth] * nusers, [top_d] * nusers)
+    #print(list(args))
+    top_dirs_all = pool.starmap(get_topdirs, args, chunksize=1)
+    logger.info("Per directory disk utilization calculation finished")
+    tdict = dict(top_dirs_all)
   for p, c in sizes.items():
-    tree = process_files(df[df['uid'] == p[0]].sort_values(by=['filename']))
-    sorted_dirs = max_dirs(tree, max_dir_depth)
-    top_dirs = [
-        x for x in sorted_dirs[:min(len(sorted_dirs), top_d)] if x[1] != 0
-    ]
-    most_volume.append("{uid:>15s} {gid:>15s} {count:>30s}: {dirs}".format(
-        uid=pwd.getpwuid(p[0]).pw_name,
-        gid=grp.getgrgid(p[1]).gr_name,
+    uid = p[0]
+    gid = p[1]
+    top_dirs = tdict[uid]
+    try:
+      uid = pwd.getpwuid(p[0]).pw_name
+      gid = grp.getgrgid(p[1]).gr_name
+    except:
+      pass
+    most_volume.append("{uid:>15} {gid:>15} {count:>30s}: {dirs}".format(
+        uid=uid,
+        gid=gid,
         count=humanize.naturalsize(c, binary=True),
         dirs=", ".join([
             "{dir}={size}".format(dir=x[0],
@@ -148,10 +198,15 @@ def stats(filename, top_n, top_d, max_dir_depth):
   ]
 
   for p, c in total_size.items():
-    most_actual.append("{uid:>15s} {gid:>15s} {count:>30s}".format(
-        uid=pwd.getpwuid(p[0]).pw_name,
-        gid=grp.getgrgid(p[1]).gr_name,
-        count=humanize.naturalsize(c, binary=True)))
+    uid = p[0]
+    gid = p[1]
+    try:
+      uid = pwd.getpwuid(p[0]).pw_name
+      gid = grp.getgrgid(p[1]).gr_name
+    except:
+      pass
+    most_actual.append("{uid:>15} {gid:>15} {count:>30s}".format(
+        uid=uid, gid=gid, count=humanize.naturalsize(c, binary=True)))
 
   print("\n".join(most_actual))
 
@@ -162,14 +217,16 @@ def parse_arguments():
   parser.add_argument('-t', '--top-n', default=20, type=int)
   parser.add_argument('-d', '--dirs-per-user', default=10, type=int)
   parser.add_argument('-m', '--max-dir-depth', default=4, type=int)
-
+  parser.add_argument('-p', '--parallel', default=16, type=int)
   return parser.parse_known_args()
 
 
 def main():
   args, unk = parse_arguments()
   logger.info(args)
-  stats(args.filename, args.top_n, args.dirs_per_user, args.max_dir_depth)
+  print("Stats from {file}".format(file=args.filename))
+  stats(args.filename, args.top_n, args.dirs_per_user, args.max_dir_depth,
+        args.parallel)
 
 
 if "__main__" in __name__:

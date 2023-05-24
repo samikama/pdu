@@ -6,10 +6,14 @@ from dataclasses import dataclass
 import os, functools, signal
 import logging, sys
 from multiprocessing import JoinableQueue as Queue, cpu_count, Process, freeze_support
+from multiprocessing.managers import BaseManager, SyncManager
 import multiprocessing
 import time
 import queue, io
 import gzip, csv
+import pyarrow as pa
+import pyarrow.dataset as ds
+import resource, humanize
 
 logging.basicConfig(
     format=
@@ -18,6 +22,10 @@ logging.basicConfig(
     level=logging.INFO)
 logger = logging.getLogger()
 STOP_SCAN = False
+
+
+class QueueManager(SyncManager):
+  pass
 
 
 def run_safe(fun, *args, **kwargs):
@@ -112,6 +120,46 @@ class Parser(asyncio.SubprocessProtocol):
     self.done = True
 
 
+def ArrowWriter(output_queue, filename):
+  count = 0
+  count_log = 10000000
+  schema = pa.schema([("filename", pa.string()), ("uid", pa.int32()),
+                      ("gid", pa.int32()), ("file_size", pa.int64()),
+                      ("num_blocks", pa.int64())])
+  struct = pa.struct([("filename", pa.string()), ("uid", pa.int32()),
+                      ("gid", pa.int32()), ("file_size", pa.int64()),
+                      ("num_blocks", pa.int64())])
+  with pa.OSFile(filename, 'wb') as sink:
+    with pa.CompressedOutputStream(sink, 'gzip') as csink:
+      with pa.ipc.new_file(csink, schema=schema) as writer:
+        while True:
+          try:
+            l, level = output_queue.get(True, timeout=30)
+          except queue.Empty:
+            logger.warning(
+                "Writer did not get any new data in past 30s. Assuming finished"
+            )
+            break
+          if l is None:
+            output_queue.task_done()
+            logger.warning("Got None. exiting")
+            break
+          if l:
+            rows = [[
+                x.name.decode("utf-8", "backslashreplace"), x.uid, x.gid,
+                x.size, x.blocks
+            ] for x in l]
+            batch = pa.record_batch(list(zip(*rows)), schema=schema)
+            writer.write(batch)
+            count += len(l)
+          output_queue.task_done()
+          if count >= count_log:
+            count_log += 10000000
+            logger.info("Processed {count} files".format(count=count))
+      logger.info(
+          "Finishing writer process! Processed {nrec} files".format(nrec=count))
+
+
 def Writer(output_queue, filename):
   count = 0
   count_log = 10000000
@@ -144,12 +192,19 @@ def Writer(output_queue, filename):
         "Finishing writer process! Processed {nrec} files".format(nrec=count))
 
 
-async def check_lsf(dir_queue: Queue, output_queue: Queue, is_lustre=True):
+async def check_lsf(dir_queue: Queue, output_queue: Queue, is_lustre: bool,
+                    wait_event):
   # dir_queue and output_queue is across processes
   loop = asyncio.get_running_loop()
   wait_count = 0
   while True and not STOP_SCAN:
-    dir, level = dir_queue.get()
+    try:
+      dir, level = dir_queue.get(True, timeout=1)
+    except queue.Empty:
+      if wait_event.is_set():
+        logger.info("Writing finished. Exiting ")
+        break
+      continue
     if dir is None:
       logger.info("{name} got dir=None queue size={qs} exiting".format(
           name=multiprocessing.current_process().name, qs=dir_queue.qsize()))
@@ -201,10 +256,11 @@ async def check_lsf(dir_queue: Queue, output_queue: Queue, is_lustre=True):
     dir_queue.task_done()
 
 
-async def scan_loop(dir_queue, output_queue, lustrefs):
+async def scan_loop(dir_queue, output_queue, lustrefs, wait_event):
   await check_lsf(dir_queue=dir_queue,
                   output_queue=output_queue,
-                  is_lustre=lustrefs)
+                  is_lustre=lustrefs,
+                  wait_event=wait_event)
 
 
 def parse_arguments():
@@ -217,33 +273,68 @@ def parse_arguments():
                       required=True)
   parser.add_argument('-f', '--filename', default=None, required=True)
   parser.add_argument('-l', '--lustrefs', default=True, action='store_false')
+  parser.add_argument('-m', "--master-node", default="127.0.0.1")
+  parser.add_argument("-r", "--rank", default=0, type=int)
   return parser.parse_known_args()
 
 
 def main():
   args, unknown = parse_arguments()
   print(args)
-  dir_queue = Queue()
-  output_queue = Queue()
+  #dir_queue = Queue()
+  #output_queue = Queue()
   if not os.path.isdir(args.scan_dir.encode()):
     logger.fatal("Error {path} is not a directory".format(path=args.scan_dir))
     sys.exit(1)
   logger.info("Starting to process {path} with {nproc} workers".format(
       path=os.path.abspath(args.scan_dir), nproc=args.num_workers))
-  dir_queue.put((args.scan_dir, 0))
+
+  if args.rank == 0:
+    multi_node_queue = Queue()
+    output_queue = Queue()
+    wait_event = multiprocessing.Event()
+    dir_queue = multi_node_queue
+    dir_queue.put((args.scan_dir, 0))
+    QueueManager.register('get_input_queue', callable=lambda: multi_node_queue)
+    QueueManager.register('get_output_queue', callable=lambda: output_queue)
+    QueueManager.register('get_event', callable=lambda: wait_event)
+    manager = QueueManager(address=(args.master_node, 56776),
+                           authkey=os.environ.get("SLURM_JOB_ID",
+                                                  "verySecret!").encode())
+    manager.start()
+    writer = Process(target=ArrowWriter,
+                     args=(output_queue, args.filename),
+                     name="Writer")
+  else:
+    QueueManager.register('get_input_queue')
+    QueueManager.register('get_output_queue')
+    QueueManager.register('get_event')
+    manager = QueueManager(address=(args.master_node, 56776),
+                           authkey=os.environ.get("SLURM_JOB_ID",
+                                                  "verySecret!").encode())
+    manager.connect()
+    logger.info("connected to manager at {mgr_address}".format(
+        mgr_address=args.master_node))
+    dir_queue = manager.get_input_queue()
+    output_queue = manager.get_output_queue()
+    wait_event = manager.get_event()
+
   workers = [
       Process(target=amain,
-              args=(dir_queue, output_queue, args.lustrefs),
+              args=(dir_queue, output_queue, args.lustrefs, wait_event),
               name=f"worker-{i}") for i in range(args.num_workers)
   ]
-  writer = Process(target=Writer,
-                   args=(output_queue, args.filename),
-                   name="Writer")
   try:
     for w in workers:
       w.start()
-    writer.start()
-    writer.join()
+    if args.rank == 0:
+      writer.start()
+      writer.join()
+      wait_event.set()
+    else:
+      logger.info("Waiting on event")
+      wait_event.wait()
+      logger.info("Master node event triggered")
   except KeyboardInterrupt:
     for w in workers:
       w.terminate()
@@ -262,17 +353,23 @@ def main():
     #   pass
     # a.join()
     time.sleep(4)
+    if args.rank == 0:
+      manager.shutdown()
+
   for w in workers:
     w.kill()
+  if args.rank == 0:
+    manager.shutdown()
 
 
-def amain(dir_queue, output_queue, lustrefs):
+def amain(dir_queue, output_queue, lustrefs, wait_event):
   loop = asyncio.new_event_loop()
   # for signame in {'SIGINT', 'SIGTERM'}:
   #   loop.add_signal_handler(getattr(signal, signame),
   #                           functools.partial(handler, signame))
   try:
-    loop.run_until_complete(scan_loop(dir_queue, output_queue, lustrefs))
+    loop.run_until_complete(
+        scan_loop(dir_queue, output_queue, lustrefs, wait_event))
   except KeyboardInterrupt:
     global STOP_SCAN
     STOP_SCAN = True
@@ -285,6 +382,24 @@ def amain(dir_queue, output_queue, lustrefs):
   return
 
 
+def format_rusage(ru: resource.struct_rusage):
+  ret = [
+      "User  : {}s".format(ru.ru_utime),
+      "System: {}s".format(ru.ru_stime),
+      "MaxRSS: {}".format(humanize.naturalsize(ru.ru_maxrss * 1024,
+                                               binary=True)),
+  ]
+  return ", ".join(ret)
+
+
 if "__main__" in __name__:
+  tstart = time.perf_counter()
   freeze_support()
-  sys.exit(main())
+  ret = main()
+  tend = time.perf_counter()
+  logger.info(
+      "Total time={t:.3f}s, Resource use Self={rusage}, Children={child}".
+      format(rusage=format_rusage(resource.getrusage(resource.RUSAGE_SELF)),
+             child=format_rusage(resource.getrusage(resource.RUSAGE_CHILDREN)),
+             t=(tend - tstart)))
+  sys.exit(ret)
