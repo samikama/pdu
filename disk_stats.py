@@ -4,7 +4,7 @@ import gzip, pandas
 #import dask.dataframe as dsk
 from argparse import ArgumentParser as AP
 import humanize
-import os
+import os, time, sys
 from typing import List, Dict, TypeVar
 from dataclasses import dataclass, field
 import logging
@@ -12,6 +12,7 @@ import multiprocessing
 import pwd, grp
 from multiprocessing import Pool
 import pyarrow as pa
+import resource
 
 logging.basicConfig(
     format=
@@ -246,6 +247,16 @@ def parse_arguments():
   return parser.parse_known_args()
 
 
+def format_rusage(ru: resource.struct_rusage):
+  ret = [
+      "User  : {}s".format(ru.ru_utime),
+      "System: {}s".format(ru.ru_stime),
+      "MaxRSS: {}".format(humanize.naturalsize(ru.ru_maxrss * 1024,
+                                               binary=True)),
+  ]
+  return ", ".join(ret)
+
+
 def main():
   args, unk = parse_arguments()
   logger.info(args)
@@ -255,4 +266,12 @@ def main():
 
 
 if "__main__" in __name__:
-  main()
+  tstart = time.perf_counter()
+  ret = main()
+  tend = time.perf_counter()
+  logger.info(
+      "Total time={t:.3f}s, Resource use Self={rusage}, Children={child}".
+      format(rusage=format_rusage(resource.getrusage(resource.RUSAGE_SELF)),
+             child=format_rusage(resource.getrusage(resource.RUSAGE_CHILDREN)),
+             t=(tend - tstart)))
+  sys.exit(ret)
