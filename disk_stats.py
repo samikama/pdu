@@ -11,6 +11,7 @@ import logging
 import multiprocessing
 import pwd, grp
 from multiprocessing import Pool
+import pyarrow as pa
 
 logging.basicConfig(
     format=
@@ -123,11 +124,28 @@ def get_topdirs(id, df, max_dir_depth, top_d):
   return id, top_dirs
 
 
+def get_csv_df(filename):
+  df = pandas.read_csv(filename)
+  #logging.info("Parsing csv {f} completed".format(f=filename))
+  return df
+
+
+def get_arrow_df(filename):
+  with gzip.open(filename=filename, mode="rb") as reader:
+    with pa.ipc.open_file(reader) as stream:
+      df = stream.read_pandas()
+      return df
+
+
 def stats(filename, top_n, top_d, max_dir_depth, n_proc):
   # with gzip.open(filename, mode='rt', newline="") as input:
   #   df = pandas.read_csv(input)
-  df = pandas.read_csv(filename)
-  logging.info("Parsing csv {f} completed".format(f=filename))
+  logging.info("Opening {f}".format(f=filename))
+  if ".csv." in filename:
+    df = get_csv_df(filename)
+  else:
+    df = get_arrow_df(filename=filename)
+  logging.info("Parsing {f} completed".format(f=filename))
   df2 = df.groupby(['uid', 'gid'], sort=False)
   counts = df2['filename'].count().nlargest(top_n)
   sizes = df2['file_size'].sum().nlargest(top_n)
@@ -157,22 +175,29 @@ def stats(filename, top_n, top_d, max_dir_depth, n_proc):
       "{uid:>15s} {gid:>15s} {count:>30s}: {dirs}".format(
           uid="uid", gid="gid", count="Total File Size", dirs="Top dirs")
   ]
-
-  with Pool(n_proc) as pool:
-    uids = [p[0] for p, _ in sizes.items()]
-    nusers = len(uids)
-    logger.info(
-        "Starting per directory disk utilization calculation using {proc} processes for {nusers} users"
-        .format(proc=n_proc, nusers=nusers))
-    args = zip(uids, [df] * nusers, [max_dir_depth] * nusers, [top_d] * nusers)
-    #print(list(args))
-    top_dirs_all = pool.starmap(get_topdirs, args, chunksize=1)
-    logger.info("Per directory disk utilization calculation finished")
-    tdict = dict(top_dirs_all)
+  if n_proc > 0:
+    with Pool(n_proc) as pool:
+      uids = [p[0] for p, _ in sizes.items()]
+      nusers = len(uids)
+      logger.info(
+          "Starting per directory disk utilization calculation using {proc} processes for {nusers} users"
+          .format(proc=n_proc, nusers=nusers))
+      args = zip(uids, [df] * nusers, [max_dir_depth] * nusers,
+                 [top_d] * nusers)
+      #print(list(args))
+      top_dirs_all = pool.starmap(get_topdirs, args, chunksize=1)
+      logger.info("Per directory disk utilization calculation finished")
+      tdict = dict(top_dirs_all)
   for p, c in sizes.items():
     uid = p[0]
     gid = p[1]
-    top_dirs = tdict[uid]
+    if n_proc > 0:
+      top_dirs = tdict[uid]
+    else:
+      id, top_dirs = get_topdirs(uid,
+                                 df,
+                                 max_dir_depth=max_dir_depth,
+                                 top_d=top_d)
     try:
       uid = pwd.getpwuid(p[0]).pw_name
       gid = grp.getgrgid(p[1]).gr_name
@@ -217,7 +242,7 @@ def parse_arguments():
   parser.add_argument('-t', '--top-n', default=20, type=int)
   parser.add_argument('-d', '--dirs-per-user', default=10, type=int)
   parser.add_argument('-m', '--max-dir-depth', default=4, type=int)
-  parser.add_argument('-p', '--parallel', default=16, type=int)
+  parser.add_argument('-p', '--parallel', default=0, type=int)
   return parser.parse_known_args()
 
 

@@ -274,7 +274,11 @@ def parse_arguments():
   parser.add_argument('-f', '--filename', default=None, required=True)
   parser.add_argument('-l', '--lustrefs', default=True, action='store_false')
   parser.add_argument('-m', "--master-node", default="127.0.0.1")
-  parser.add_argument("-r", "--rank", default=0, type=int)
+  parser.add_argument("-r",
+                      "--rank",
+                      default=os.environ.get("SLURM_NODEID", 0),
+                      type=int)
+  parser.add_argument('-c', '--csv-file', default=False, action='store_true')
   return parser.parse_known_args()
 
 
@@ -302,9 +306,14 @@ def main():
                            authkey=os.environ.get("SLURM_JOB_ID",
                                                   "verySecret!").encode())
     manager.start()
-    writer = Process(target=ArrowWriter,
-                     args=(output_queue, args.filename),
-                     name="Writer")
+    if args.csv_file:
+      writer = Process(target=Writer,
+                       args=(output_queue, args.filename),
+                       name="Writer")
+    else:
+      writer = Process(target=ArrowWriter,
+                       args=(output_queue, args.filename),
+                       name="Writer")
   else:
     QueueManager.register('get_input_queue')
     QueueManager.register('get_output_queue')
@@ -312,7 +321,19 @@ def main():
     manager = QueueManager(address=(args.master_node, 56776),
                            authkey=os.environ.get("SLURM_JOB_ID",
                                                   "verySecret!").encode())
-    manager.connect()
+    #sleep 10s to let master process start
+    connected = False
+    for _ in range(12):
+      try:
+        manager.connect()
+        connected = True
+      except:
+        time.sleep(10)
+    if not connected:
+      logger.error(
+          "Failed to connect to manager at {mgr_address}. Exiting".format(
+              mgr_address=args.master_node))
+      sys.exit(1)
     logger.info("connected to manager at {mgr_address}".format(
         mgr_address=args.master_node))
     dir_queue = manager.get_input_queue()
