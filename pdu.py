@@ -156,8 +156,8 @@ def ArrowWriter(output_queue, filename):
           if count >= count_log:
             count_log += 10000000
             logger.info("Processed {count} files".format(count=count))
-      logger.info(
-          "Finishing writer process! Processed {nrec} files".format(nrec=count))
+      logger.info("Finishing writer process! Processed {nrec} files".format(
+          nrec=humanize.intcomma(count)))
 
 
 def Writer(output_queue, filename):
@@ -188,8 +188,8 @@ def Writer(output_queue, filename):
       if count >= count_log:
         count_log += 10000000
         logger.info("Processed {count} files".format(count=count))
-    logger.info(
-        "Finishing writer process! Processed {nrec} files".format(nrec=count))
+    logger.info("Finishing writer process! Processed {nrec} files".format(
+        nrec=humanize.intcomma(count)))
 
 
 async def check_lsf(dir_queue: Queue, output_queue: Queue, is_lustre: bool,
@@ -418,9 +418,11 @@ if "__main__" in __name__:
   freeze_support()
   ret = main()
   tend = time.perf_counter()
+  args, unknown = parse_arguments()
   logger.info(
-      "Total time={t:.3f}s, Resource use Self={rusage}, Children={child}".
-      format(rusage=format_rusage(resource.getrusage(resource.RUSAGE_SELF)),
-             child=format_rusage(resource.getrusage(resource.RUSAGE_CHILDREN)),
-             t=(tend - tstart)))
+      "Rank={rank} total time={t:.3f}s, Resource use Self={rusage}, Children={child}"
+      .format(rank=args.rank,
+              rusage=format_rusage(resource.getrusage(resource.RUSAGE_SELF)),
+              child=format_rusage(resource.getrusage(resource.RUSAGE_CHILDREN)),
+              t=(tend - tstart)))
   sys.exit(ret)
