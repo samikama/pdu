@@ -70,7 +70,7 @@ def process_files(df, relative='/'):
     blocks = it.num_blocks
     counter += 1
     if counter > logcount:
-      logging.info("processed", counter, "items")
+      logging.info("processed {counter} items".format(counter=humanize.intcomma(counter)))
       logcount += 10000000
     fp, fname = os.path.split(f)
     pp = fp

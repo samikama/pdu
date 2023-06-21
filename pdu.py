@@ -40,8 +40,7 @@ def run_safe(fun, *args, **kwargs):
   return ret
 
 
-#@dataclass(slots=True)
-@dataclass
+@dataclass(slots=True)
 class ObjStats:
   name: str
   uid: int
@@ -374,11 +373,10 @@ def main():
     #   pass
     # a.join()
     time.sleep(4)
-    if args.rank == 0:
-      manager.shutdown()
 
   for w in workers:
     w.kill()
+  time.sleep(10)
   if args.rank == 0:
     manager.shutdown()
 
