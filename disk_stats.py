@@ -62,6 +62,7 @@ def process_files(df, relative='/'):
   counter = 0
   logcount = 99999999
   pp_old = None
+  logging.info("Creating directory tree of {rel}".format(rel=relative))
   for it in df.itertuples():
     uid = it.uid
     gid = it.gid
@@ -114,14 +115,16 @@ def max_dirs(root, depth=2):
   return sorted_dirs
 
 
-def get_topdirs(id, df, max_dir_depth, top_d):
+def get_topdirs(id, df2, max_dir_depth, top_d):
   logger.info("Processing user {uid} pid={pid} name={name}".format(
       uid=id, pid=os.getpid(), name=multiprocessing.current_process().name))
-  tree = process_files(df[df['uid'] == id].sort_values(by=['filename']))
+  tree = process_files(df2.get_group(id).sort_values(by=['filename']))
   sorted_dirs = max_dirs(tree, max_dir_depth)
   top_dirs = [
       x for x in sorted_dirs[:min(len(sorted_dirs), top_d)] if x[1] != 0
   ]
+  del tree
+  del sorted_dirs
   return id, top_dirs
 
 
@@ -147,7 +150,7 @@ def stats(filename, top_n, top_d, max_dir_depth, n_proc):
   else:
     df = get_arrow_df(filename=filename)
   logging.info("Parsing {f} completed".format(f=filename))
-  df2 = df.groupby(['uid', 'gid'], sort=False)
+  df2 = df.groupby(['uid'], sort=False)
   counts = df2['filename'].count().nlargest(top_n)
   sizes = df2['file_size'].sum().nlargest(top_n)
   total_size = df2['num_blocks'].sum().mul(512).nlargest(top_n)
@@ -196,7 +199,7 @@ def stats(filename, top_n, top_d, max_dir_depth, n_proc):
       top_dirs = tdict[uid]
     else:
       id, top_dirs = get_topdirs(uid,
-                                 df,
+                                 df2,
                                  max_dir_depth=max_dir_depth,
                                  top_d=top_d)
     try:
