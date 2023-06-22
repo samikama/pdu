@@ -71,7 +71,8 @@ def process_files(df, relative='/'):
     blocks = it.num_blocks
     counter += 1
     if counter > logcount:
-      logging.info("processed {counter} items".format(counter=humanize.intcomma(counter)))
+      logging.info("processed {counter} items".format(
+          counter=humanize.intcomma(counter)))
       logcount += 10000000
     fp, fname = os.path.split(f)
     pp = fp
@@ -158,26 +159,27 @@ def stats(filename, top_n, top_d, max_dir_depth, n_proc):
   logger.info("Top_n computation is done")
   most_files = [
       "----------Users with most files------------",
-      "{uid:>15s} {gid:>15s} {count:>30s}".format(uid="uid",
-                                                  gid="gid",
-                                                  count="Number of files")
+      "{uid:>15s} {count:>30s}".format(uid="uid", count="Number of files")
   ]
   for p, c in counts.items():
-    uid = p[0]
-    gid = p[1]
+    uid = p
+    #    gid = p[1]
     try:
-      uid = pwd.getpwuid(p[0]).pw_name
-      gid = grp.getgrgid(p[1]).gr_name
+      uid = pwd.getpwuid(p).pw_name
+
+
+#      gid = grp.getgrgid(p[1]).gr_name
     except:
       pass
-    most_files.append("{uid:>15} {gid:>15} {count:>30s}".format(
-        uid=uid, gid=gid, count=humanize.intcomma(c)))
+    most_files.append("{uid:>15} {count:>30s}".format(
+        uid=uid, count=humanize.intcomma(c)))
   print("\n".join(most_files))
 
   most_volume = [
       "----------Users with most disk usage------------",
-      "{uid:>15s} {gid:>15s} {count:>30s}: {dirs}".format(
-          uid="uid", gid="gid", count="Total File Size", dirs="Top dirs")
+      "{uid:>15s} {count:>30s}: {dirs}".format(uid="uid",
+                                               count="Total File Size",
+                                               dirs="Top dirs")
   ]
   if n_proc > 0:
     with Pool(n_proc) as pool:
@@ -193,8 +195,8 @@ def stats(filename, top_n, top_d, max_dir_depth, n_proc):
       logger.info("Per directory disk utilization calculation finished")
       tdict = dict(top_dirs_all)
   for p, c in sizes.items():
-    uid = p[0]
-    gid = p[1]
+    uid = p
+    #gid = p[1]
     if n_proc > 0:
       top_dirs = tdict[uid]
     else:
@@ -203,13 +205,12 @@ def stats(filename, top_n, top_d, max_dir_depth, n_proc):
                                  max_dir_depth=max_dir_depth,
                                  top_d=top_d)
     try:
-      uid = pwd.getpwuid(p[0]).pw_name
-      gid = grp.getgrgid(p[1]).gr_name
+      uid = pwd.getpwuid(p).pw_name
+      #gid = grp.getgrgid(p[1]).gr_name
     except:
       pass
-    most_volume.append("{uid:>15} {gid:>15} {count:>30s}: {dirs}".format(
+    most_volume.append("{uid:>15} {count:>30s}: {dirs}".format(
         uid=uid,
-        gid=gid,
         count=humanize.naturalsize(c, binary=True),
         dirs=", ".join([
             "{dir}={size}".format(dir=x[0],
@@ -221,21 +222,19 @@ def stats(filename, top_n, top_d, max_dir_depth, n_proc):
 
   most_actual = [
       "----------Users with most actual disk usage------------",
-      "{uid:>15s} {gid:>15s} {count:>30s}".format(uid="uid",
-                                                  gid="gid",
-                                                  count="Actual Disk Usage")
+      "{uid:>15s} {count:>30s}".format(uid="uid", count="Actual Disk Usage")
   ]
 
   for p, c in total_size.items():
-    uid = p[0]
-    gid = p[1]
+    uid = p
+    #gid = p[1]
     try:
-      uid = pwd.getpwuid(p[0]).pw_name
-      gid = grp.getgrgid(p[1]).gr_name
+      uid = pwd.getpwuid(p).pw_name
+      #gid = grp.getgrgid(p[1]).gr_name
     except:
       pass
-    most_actual.append("{uid:>15} {gid:>15} {count:>30s}".format(
-        uid=uid, gid=gid, count=humanize.naturalsize(c, binary=True)))
+    most_actual.append("{uid:>15} {count:>30s}".format(
+        uid=uid, count=humanize.naturalsize(c, binary=True)))
 
   print("\n".join(most_actual))
 
