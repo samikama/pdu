@@ -34,7 +34,7 @@ class DB():
     )
 
   def add_to_user(self, uid, scan_date, num_files, file_size, top_dirs):
-    user_table = "user_{id}".format(uid)
+    user_table = "user_{id}".format(id=uid)
     self._cursor.execute(
         "CREATE TABLE IF NOT EXISTS {table}(date integer PRIMARY KEY, file_count integer, size integer, top_dirs text NOT NULL)"
         .format(table=user_table))
@@ -192,7 +192,10 @@ def stats(
 ):
   # with gzip.open(filename, mode='rt', newline="") as input:
   #   df = pandas.read_csv(input)
-  fdate = os.path.splitext(os.path.basename(filename))[0].split('-')
+
+  fdate = os.path.splitext(
+      os.path.basename(filename).replace(".arrow",
+                                         "").replace(".csv", ""))[0].split('-')
   if len(fdate) < 2:
     fdate = int(time.time())
   else:
