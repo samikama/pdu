@@ -258,7 +258,7 @@ def stats(
     # else:å
 
     id, top_dirs = get_topdirs(uid,
-                               df,
+                               df2,
                                max_dir_depth=max_dir_depth,
                                top_d=top_d)
     dirs = ", ".join([
