@@ -42,12 +42,12 @@ class DB():
         "CREATE TABLE IF NOT EXISTS {table}(date integer PRIMARY KEY, file_count integer, size integer, top_dirs text NOT NULL)"
         .format(table=user_table))
     self._cursor.execute(
-        "INSERT INTO {table} VALUES({scand},{count},{size},'{topd}')".format(
-            table=user_table,
-            scand=scan_date,
-            count=num_files,
-            size=file_size,
-            topd=top_dirs))
+        "INSERT or REPLACE INTO {table} VALUES({scand},{count},{size},'{topd}')"
+        .format(table=user_table,
+                scand=scan_date,
+                count=num_files,
+                size=file_size,
+                topd=top_dirs))
     self._cursor.execute(
         "INSERT or REPLACE INTO {table} VALUES({id},{scand},{size},{count})".
         format(table="all_users",
