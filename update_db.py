@@ -49,12 +49,12 @@ class DB():
             size=file_size,
             topd=top_dirs))
     self._cursor.execute(
-        "INSERT INTO {table} VALUES({id},{scand},{size},{count})".format(
-            table="all_users",
-            id=uid,
-            scand=scan_date,
-            count=num_files,
-            size=file_size))
+        "INSERT or REPLACE INTO {table} VALUES({id},{scand},{size},{count})".
+        format(table="all_users",
+               id=uid,
+               scand=scan_date,
+               count=num_files,
+               size=file_size))
 
     self._connection.commit()
 
