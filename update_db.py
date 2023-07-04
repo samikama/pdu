@@ -32,6 +32,9 @@ class DB():
     self._cursor.execute(
         "CREATE TABLE IF NOT EXISTS users(uid integer PRIMARY KEY, name text NOT NULL)"
     )
+    self._cursor.execute(
+        "CREATE TABLE IF NOT EXISTS all_users(uid integer PRIMARY KEY, date integer, size integer, file_count integer)"
+    )
 
   def add_to_user(self, uid, scan_date, num_files, file_size, top_dirs):
     user_table = "user_{id}".format(id=uid)
@@ -45,6 +48,11 @@ class DB():
             count=num_files,
             size=file_size,
             topd=top_dirs))
+    self._cursor.execute(
+        "INSERT INTO {table} VALUES({uid},{scand},{size},{count})".format(
+            table="all_users", scand=scan_date, count=num_files,
+            size=file_size))
+
     self._connection.commit()
 
 
