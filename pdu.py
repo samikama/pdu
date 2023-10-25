@@ -154,7 +154,8 @@ def ArrowWriter(output_queue, filename):
           output_queue.task_done()
           if count >= count_log:
             count_log += 10000000
-            logger.info("Processed {count} files".format(count=count))
+            logger.info("Processed {count} files".format(
+                count=humanize.intcomma(count)))
       logger.info("Finishing writer process! Processed {nrec} files".format(
           nrec=humanize.intcomma(count)))
 
