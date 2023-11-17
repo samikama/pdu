@@ -87,7 +87,7 @@ class Parser(asyncio.SubprocessProtocol):
           if d != self.dir:
             self.dir_queue.put((d, self.level))
             if self.keep_dirs:
-              st = os.stat(d)
+              s = os.stat(d)
               l.append(
                   ObjStats(name=d,
                            uid=s.st_uid,
@@ -272,7 +272,7 @@ async def scan_loop(dir_queue, output_queue, lustrefs, wait_event, keep_dirs):
                   output_queue=output_queue,
                   is_lustre=lustrefs,
                   wait_event=wait_event,
-                  keep_dirs)
+                  keep_dirs=keep_dirs)
 
 
 def parse_arguments():
