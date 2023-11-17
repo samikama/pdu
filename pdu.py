@@ -87,9 +87,9 @@ class Parser(asyncio.SubprocessProtocol):
           if d != self.dir:
             self.dir_queue.put((d, self.level))
             if self.keep_dirs:
-              s = os.stat(d)
+              s = os.stat(dr)
               l.append(
-                  ObjStats(name=d,
+                  ObjStats(name=dr,
                            uid=s.st_uid,
                            gid=s.st_gid,
                            size=s.st_size,
