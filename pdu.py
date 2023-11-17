@@ -56,7 +56,7 @@ class Parser(asyncio.SubprocessProtocol):
   level: int
 
   def __init__(self, exit_future: asyncio.Future, output_queue: Queue,
-               dir_queue: Queue, level: int, curr_dir: str):
+               dir_queue: Queue, level: int, curr_dir: str, keep_dirs: bool):
     self.exit_future = exit_future
     self.rem = None
     self.queue = output_queue
@@ -64,6 +64,7 @@ class Parser(asyncio.SubprocessProtocol):
     self.level = level
     self.dir = curr_dir
     self.done = False
+    self.keep_dirs = keep_dirs
 
   def pipe_data_received(self, fd, data):
     l = []
@@ -85,6 +86,14 @@ class Parser(asyncio.SubprocessProtocol):
           d = d.decode()
           if d != self.dir:
             self.dir_queue.put((d, self.level))
+            if self.keep_dirs:
+              st = os.stat(d)
+              l.append(
+                  ObjStats(name=d,
+                           uid=s.st_uid,
+                           gid=s.st_gid,
+                           size=s.st_size,
+                           blocks=s.st_blocks))
           continue
 
         if os.path.islink(d):
@@ -193,7 +202,7 @@ def Writer(output_queue, filename):
 
 
 async def check_lsf(dir_queue: Queue, output_queue: Queue, is_lustre: bool,
-                    wait_event):
+                    wait_event, keep_dirs):
   # dir_queue and output_queue is across processes
   loop = asyncio.get_running_loop()
   wait_count = 0
@@ -223,7 +232,8 @@ async def check_lsf(dir_queue: Queue, output_queue: Queue, is_lustre: bool,
                          output_queue=output_queue,
                          dir_queue=dir_queue,
                          level=level + 1,
-                         curr_dir=cmd),
+                         curr_dir=cmd,
+                         keep_dirs=keep_dirs),
           '/usr/bin/find',
           cmd,
           '-maxdepth',
@@ -236,7 +246,8 @@ async def check_lsf(dir_queue: Queue, output_queue: Queue, is_lustre: bool,
                          output_queue=output_queue,
                          dir_queue=dir_queue,
                          level=level,
-                         curr_dir=cmd),
+                         curr_dir=cmd,
+                         keep_dirs=keep_dirs),
           '/usr/bin/lfs',
           'find',
           cmd,
@@ -256,11 +267,12 @@ async def check_lsf(dir_queue: Queue, output_queue: Queue, is_lustre: bool,
     dir_queue.task_done()
 
 
-async def scan_loop(dir_queue, output_queue, lustrefs, wait_event):
+async def scan_loop(dir_queue, output_queue, lustrefs, wait_event, keep_dirs):
   await check_lsf(dir_queue=dir_queue,
                   output_queue=output_queue,
                   is_lustre=lustrefs,
-                  wait_event=wait_event)
+                  wait_event=wait_event,
+                  keep_dirs)
 
 
 def parse_arguments():
@@ -274,6 +286,7 @@ def parse_arguments():
   parser.add_argument('-f', '--filename', default=None, required=True)
   parser.add_argument('-l', '--lustrefs', default=True, action='store_false')
   parser.add_argument('-m', "--master-node", default="127.0.0.1")
+  parser.add_argument("-k", "--keep-dirs", default=False, action='store_true')
   parser.add_argument("-r",
                       "--rank",
                       default=os.environ.get("SLURM_NODEID", 0),
@@ -342,7 +355,8 @@ def main():
 
   workers = [
       Process(target=amain,
-              args=(dir_queue, output_queue, args.lustrefs, wait_event),
+              args=(dir_queue, output_queue, args.lustrefs, wait_event,
+                    args.keep_dirs),
               name=f"worker-{i}") for i in range(args.num_workers)
   ]
   try:
@@ -382,14 +396,14 @@ def main():
     manager.shutdown()
 
 
-def amain(dir_queue, output_queue, lustrefs, wait_event):
+def amain(dir_queue, output_queue, lustrefs, wait_event, keep_dirs: bool):
   loop = asyncio.new_event_loop()
   # for signame in {'SIGINT', 'SIGTERM'}:
   #   loop.add_signal_handler(getattr(signal, signame),
   #                           functools.partial(handler, signame))
   try:
     loop.run_until_complete(
-        scan_loop(dir_queue, output_queue, lustrefs, wait_event))
+        scan_loop(dir_queue, output_queue, lustrefs, wait_event, keep_dirs))
   except KeyboardInterrupt:
     global STOP_SCAN
     STOP_SCAN = True
