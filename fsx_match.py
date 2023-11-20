@@ -243,7 +243,7 @@ def main():
         path=args.database_file))
     sys.exit(1)
   logger.info("Starting to process {path} with {nproc} workers".format(
-      path=os.path.abspath(args.scan_dir), nproc=args.num_workers))
+      path=os.path.abspath(args.database_file), nproc=args.num_workers))
 
   if args.rank == 0:
     processing_queue = Queue(1024)
