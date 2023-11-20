@@ -98,7 +98,7 @@ class Parser(asyncio.SubprocessProtocol):
 
         if os.path.islink(d):
           if self.keep_dirs:
-            s = os.stat(dr)
+            s = os.lstat(dr)
             l.append(
                 ObjStats(name=dr,
                          uid=s.st_uid,
