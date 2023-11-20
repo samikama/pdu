@@ -87,7 +87,7 @@ def feed_queue(filename,
       l = []
       chunk_count += 1
       file_count += len(batch)
-      for f in batch.itertuples(index=False):
+      for f in batch[1].itertuples(index=False):
         l.append((f.filename, f.uid, f.gid))
       process_queue.put((uid, l))
       if chunk_count % 100 == 0:
