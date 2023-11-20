@@ -127,6 +127,7 @@ def run(queue_: multiprocessing.Queue, termination_event: multiprocessing.Event,
   while not _term_event.is_set() or not queue_empty:
     try:
       items = _queue.get(True, timeout=5)
+      attempts = 0
     except queue.Empty as e:
       if _term_event.is_set():
         attempts += 1
