@@ -173,10 +173,15 @@ def run(queue_: multiprocessing.Queue, termination_event: multiprocessing.Event,
 
 def read_mapping(filename) -> dict:
   with open(filename, "rt") as f:
+    d = {}
     lines = f.readlines()
-    return dict([
-        (int(x[0]), int(x[1])) for y in lines for x in y.strip().split(',')
-    ])
+    for l in lines:
+      o, n = l.strip().split(",")
+      d[int(o)] = int(n)
+    return d
+    # return dict([
+    #     (int(x[0]), int(x[1])) for y in lines for x in y.strip().split(',')
+    # ])
 
 
 def node_main(args, manager: QueueManager, num_local_workers=16):
