@@ -101,67 +101,73 @@ def feed_queue(filename,
   wait_event.set()
 
 
-class LocalWorker(Process):
+# class LocalWorker(Process):
 
-  def __init__(self, queue: multiprocessing.Queue,
-               termination_event: multiprocessing.Event, uid_mapping: dict,
-               gid_mapping: dict):
-    self._queue = queue
-    self._term_event = termination_event
-    self._uids = uid_mapping
-    self._gids = gid_mapping
+#   def __init__(self, queue: multiprocessing.Queue,
+#                termination_event: multiprocessing.Event, uid_mapping: dict,
+#                gid_mapping: dict):
+#     self._queue = queue
+#     self._term_event = termination_event
+#     self._uids = uid_mapping
+#     self._gids = gid_mapping
 
-  def run(self):
-    succ = 0
-    fail = 0
-    skip = 0
-    already = 0
-    attempts = 0
-    queue_empty = False
-    while not self._term_event.is_set() or not queue_empty:
-      try:
-        items = self._queue.get(True, timeout=5)
-      except queue.Empty as e:
-        if self._term_event.is_set():
-          attempts += 1
-          queue_empty = attempts > 2
-        continue
-      if items is None:
-        break
-      old_id = items[0]
-      files = items[1]
-      if old_id not in self._uids:
-        logger.error(
-            "Unknown mapping for old uid {uid}. Skipping".format(uid=old_id))
-        continue
-      new_id = self._uids[old_id]
-      for f, u, g in files:
-        if os.path.exists(f):
-          ng = self._gids.get(g, g)
-          if u == new_id:
-            already += 1
-            continue
-          if u != old_id:
-            logger.warning(
-                "File {f} has different old uid({u}) then expected({old})".
-                format(f=f, u=u, old=old_id))
-          try:
-            os.chown(f, uid=new_id, gid=ng, follow_symlinks=False)
-            succ += 1
-          except Exception as e:
-            fail += 1
-            logger.error("While processing {f} caught exception {e}".format(
-                f=f, e=e))
-        else:
-          skip += 1
-    logger.info(
-        "Worker {n} exiting. Success={succ}, Fail={fail}, Skipped={skip}, Already Updated={al} total={tot}"
-        .format(succ=succ,
-                fail=fail,
-                skip=skip,
-                al=already,
-                n=self.name,
-                tot=succ + fail + skip))
+
+def run(queue: multiprocessing.Queue, termination_event: multiprocessing.Event,
+        uid_mapping: dict, gid_mapping: dict, name: str):
+  _term_event = termination_event
+  _queue = queue
+  _uids = uid_mapping
+  _gids = gid_mapping
+  succ = 0
+  fail = 0
+  skip = 0
+  already = 0
+  attempts = 0
+  queue_empty = False
+  while not _term_event.is_set() or not queue_empty:
+    try:
+      items = _queue.get(True, timeout=5)
+    except Queue.Empty as e:
+      if _term_event.is_set():
+        attempts += 1
+        queue_empty = attempts > 2
+      continue
+    if items is None:
+      break
+    old_id = items[0]
+    files = items[1]
+    if old_id not in _uids:
+      logger.error(
+          "Unknown mapping for old uid {uid}. Skipping".format(uid=old_id))
+      continue
+    new_id = _uids[old_id]
+    for f, u, g in files:
+      if os.path.exists(f):
+        ng = _gids.get(g, g)
+        if u == new_id:
+          already += 1
+          continue
+        if u != old_id:
+          logger.warning(
+              "File {f} has different old uid({u}) then expected({old})".format(
+                  f=f, u=u, old=old_id))
+        try:
+          os.chown(f, uid=new_id, gid=ng, follow_symlinks=False)
+          succ += 1
+        except Exception as e:
+          fail += 1
+          logger.error("While processing {f} caught exception {e}".format(f=f,
+                                                                          e=e))
+      else:
+        skip += 1
+  logger.info(
+      "Worker {n} exiting. Success={succ}, Fail={fail}, Skipped={skip}, Already Updated={al} total={tot}"
+      .format(succ=succ,
+              fail=fail,
+              skip=skip,
+              al=already,
+              n=name,
+              tot=succ + fail + skip))
 
 
 def read_mapping(filename) -> dict:
@@ -174,15 +180,15 @@ def node_main(args, manager: QueueManager, num_local_workers=16):
   local_queue = Queue(maxsize=5 * num_local_workers)
   local_event = Event()
   local_event.clear()
-  workers: List[LocalWorker] = []
+  workers: List[Process] = []
   uid_mapping = read_mapping(args.uid_mapping)
   gid_mapping = read_mapping(args.gid_mapping)
   for i in range(num_local_workers):
-    w = LocalWorker(local_queue,
-                    local_event,
-                    uid_mapping=uid_mapping,
-                    gid_mapping=gid_mapping)
-    w.name = f"Worker-{i}"
+    w = Process(target=run,
+                args=(local_queue, local_event, uid_mapping, gid_mapping,
+                      f"Worker-{i}"),
+                name=f"Worker-{i}")
+    # w.name = f"Worker-{i}"
     workers.append(w)
   for w in workers:
     w.start()
