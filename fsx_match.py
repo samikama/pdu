@@ -86,7 +86,7 @@ def feed_queue(filename,
     for batch in files.groupby(np.arange(len(files)) // chunk_size):
       l = []
       chunk_count += 1
-      file_count += len(batch)
+      file_count += len(batch[0])
       for f in batch[1].itertuples(index=False):
         l.append((f.filename, f.uid, f.gid))
       process_queue.put((uid, l))
@@ -135,7 +135,7 @@ def run(queue_: multiprocessing.Queue, termination_event: multiprocessing.Event,
       continue
     if items is None:
       break
-    old_id = items[0]
+    old_id = int(items[0])
     files = items[1]
     if old_id not in _uids:
       logger.error(
@@ -144,7 +144,7 @@ def run(queue_: multiprocessing.Queue, termination_event: multiprocessing.Event,
     new_id = _uids[old_id]
     for f, u, g in files:
       if os.path.exists(f):
-        ng = _gids.get(g, g)
+        ng = _gids.get(g, int(g))
         if u == new_id:
           already += 1
           continue
