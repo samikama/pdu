@@ -146,7 +146,7 @@ class LocalWorker(Process):
                 "File {f} has different old uid({u}) then expected({old})".
                 format(f=f, u=u, old=old_id))
           try:
-            os.chown(f, uid=new_id, gid=ng)
+            os.chown(f, uid=new_id, gid=ng, follow_symlinks=False)
             succ += 1
           except Exception as e:
             fail += 1
