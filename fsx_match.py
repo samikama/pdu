@@ -112,10 +112,10 @@ def feed_queue(filename,
 #     self._gids = gid_mapping
 
 
-def run(queue: multiprocessing.Queue, termination_event: multiprocessing.Event,
+def run(queue_: multiprocessing.Queue, termination_event: multiprocessing.Event,
         uid_mapping: dict, gid_mapping: dict, name: str):
   _term_event = termination_event
-  _queue = queue
+  _queue = queue_
   _uids = uid_mapping
   _gids = gid_mapping
   succ = 0
@@ -127,7 +127,7 @@ def run(queue: multiprocessing.Queue, termination_event: multiprocessing.Event,
   while not _term_event.is_set() or not queue_empty:
     try:
       items = _queue.get(True, timeout=5)
-    except Queue.Empty as e:
+    except queue.Empty as e:
       if _term_event.is_set():
         attempts += 1
         queue_empty = attempts > 2
