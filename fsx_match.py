@@ -83,7 +83,7 @@ def feed_queue(filename,
   file_count = 0
   for uid in df.groups.keys():
     files = df.get_group(uid)
-    for batch in files.groupby(np.arange(len(files) // chunk_size)):
+    for batch in files.groupby(np.arange(len(files)) // chunk_size):
       l = []
       chunk_count += 1
       file_count += len(batch)
