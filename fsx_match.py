@@ -58,7 +58,6 @@ def get_arrow_df(filename):
 
 
 def db_reader(filename):
-  loop = asyncio.get_running_loop()
   fdate = os.path.splitext(
       os.path.basename(filename).replace(".arrow",
                                          "").replace(".csv", ""))[0].split('-')
@@ -116,6 +115,7 @@ class LocalWorker(Process):
     succ = 0
     fail = 0
     skip = 0
+    already = 0
     attempts = 0
     queue_empty = False
     while not self._term_event.is_set() or not queue_empty:
@@ -138,6 +138,9 @@ class LocalWorker(Process):
       for f, u, g in files:
         if os.path.exists(f):
           ng = self._gids.get(g, g)
+          if u == new_id:
+            already += 1
+            continue
           if u != old_id:
             logger.warning(
                 "File {f} has different old uid({u}) then expected({old})".
@@ -152,10 +155,11 @@ class LocalWorker(Process):
         else:
           skip += 1
     logger.info(
-        "Worker {n} exiting. Success={succ}, Fail={fail}, Skipped={skip} total={tot}"
+        "Worker {n} exiting. Success={succ}, Fail={fail}, Skipped={skip}, Already Updated={al} total={tot}"
         .format(succ=succ,
                 fail=fail,
                 skip=skip,
+                al=already,
                 n=self.name,
                 tot=succ + fail + skip))
 
@@ -220,7 +224,7 @@ def parse_arguments():
                       type=int,
                       required=True)
   parser.add_argument('-u', '--uid-mapping', default=None, required=True)
-  parser.add_argument('-g', '--gid-mapping', default=True, action='store_false')
+  parser.add_argument('-g', '--gid-mapping', default=None, required=True)
   parser.add_argument('-m', "--master-node", default="127.0.0.1")
   parser.add_argument("-r",
                       "--rank",
