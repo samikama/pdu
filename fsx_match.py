@@ -86,7 +86,7 @@ def feed_queue(filename,
     for batch in files.groupby(np.arange(len(files)) // chunk_size):
       l = []
       chunk_count += 1
-      file_count += len(batch[0])
+      file_count += len(batch[1])
       for f in batch[1].itertuples(index=False):
         l.append((f.filename, f.uid, f.gid))
       process_queue.put((uid, l))
@@ -174,7 +174,9 @@ def run(queue_: multiprocessing.Queue, termination_event: multiprocessing.Event,
 def read_mapping(filename) -> dict:
   with open(filename, "rt") as f:
     lines = f.readlines()
-    return dict([(int(x[0]), int(x[1])) for y in lines for x in y.split(',')])
+    return dict([
+        (int(x[0]), int(x[1])) for y in lines for x in y.strip().split(',')
+    ])
 
 
 def node_main(args, manager: QueueManager, num_local_workers=16):
@@ -184,6 +186,8 @@ def node_main(args, manager: QueueManager, num_local_workers=16):
   workers: List[Process] = []
   uid_mapping = read_mapping(args.uid_mapping)
   gid_mapping = read_mapping(args.gid_mapping)
+  logger.info("UID Mapping={u} gid_mapping={g}".format(u=uid_mapping,
+                                                       g=gid_mapping))
   for i in range(num_local_workers):
     w = Process(target=run,
                 args=(local_queue, local_event, uid_mapping, gid_mapping,
