@@ -201,9 +201,9 @@ def node_main(args, manager: QueueManager, num_local_workers=16):
   for w in workers:
     if w.is_alive():
       w.kill()
-      logger("Child {c} exited with {e}".format(c=w.name, e=w.exitcode))
+      logger.info("Child {c} exited with {e}".format(c=w.name, e=w.exitcode))
     else:
-      logger("Child {c} exited with {e}".format(c=w.name, e=w.exitcode))
+      logger.info("Child {c} exited with {e}".format(c=w.name, e=w.exitcode))
 
 
 def parse_arguments():

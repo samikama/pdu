@@ -97,6 +97,15 @@ class Parser(asyncio.SubprocessProtocol):
           continue
 
         if os.path.islink(d):
+          if self.keep_dirs:
+            s = os.stat(dr)
+            l.append(
+                ObjStats(name=dr,
+                         uid=s.st_uid,
+                         gid=s.st_gid,
+                         size=s.st_size,
+                         blocks=s.st_blocks))
+
           continue
       except Exception as e:
         logger.error("Encountered with exception {exc} dir={d}".format(exc=e,
