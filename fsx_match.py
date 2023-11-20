@@ -124,6 +124,7 @@ def run(queue_: multiprocessing.Queue, termination_event: multiprocessing.Event,
   already = 0
   attempts = 0
   queue_empty = False
+  proc = 0
   while not _term_event.is_set() or not queue_empty:
     try:
       items = _queue.get(True, timeout=5)
@@ -161,6 +162,9 @@ def run(queue_: multiprocessing.Queue, termination_event: multiprocessing.Event,
                                                                           e=e))
       else:
         skip += 1
+    proc += 1
+    if proc % 100000 == 0:
+      logger.info("Worker {n} processed {proc} files".format(n=name, proc=proc))
   logger.info(
       "Worker {n} exiting. Success={succ}, Fail={fail}, Skipped={skip}, Already Updated={al} total={tot}"
       .format(succ=succ,
