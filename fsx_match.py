@@ -220,6 +220,8 @@ def node_main(args, manager: QueueManager, num_local_workers=16):
       continue
     local_queue.put(l)
   local_event.set()
+  while not local_queue.empty():
+    time.sleep(5)
   for w in workers:
     w.join(timeout=12)
   for w in workers:
