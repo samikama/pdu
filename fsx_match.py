@@ -162,9 +162,10 @@ def run(queue_: multiprocessing.Queue, termination_event: multiprocessing.Event,
                                                                           e=e))
       else:
         skip += 1
-    proc += 1
-    if proc % 100000 == 0:
-      logger.info("Worker {n} processed {proc} files".format(n=name, proc=proc))
+      proc += 1
+      if proc % 100000 == 0:
+        logger.info("Worker {n} processed {proc} files".format(n=name,
+                                                               proc=proc))
   logger.info(
       "Worker {n} exiting. Success={succ}, Fail={fail}, Skipped={skip}, Already Updated={al} total={tot}"
       .format(succ=succ,
@@ -222,8 +223,9 @@ def node_main(args, manager: QueueManager, num_local_workers=16):
   local_event.set()
   while not local_queue.empty():
     time.sleep(5)
+  logger.info("local queue empty. waiting for workers")
   for w in workers:
-    w.join(timeout=12)
+    w.join(timeout=600)
   for w in workers:
     if w.is_alive():
       w.kill()
