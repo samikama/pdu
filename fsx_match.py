@@ -163,7 +163,7 @@ def run(queue_: multiprocessing.Queue, termination_event: multiprocessing.Event,
       else:
         skip += 1
       proc += 1
-      if proc % 100000 == 0:
+      if proc % 10000 == 0:
         logger.info("Worker {n} processed {proc} files".format(n=name,
                                                                proc=proc))
   logger.info(
